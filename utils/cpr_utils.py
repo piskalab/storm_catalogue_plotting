@@ -58,7 +58,6 @@ def _load_window(ds, var_name, peak_lat, half_width=1.5):
     return img, center_lat, extent, desired_min, desired_max
 
 def plot_reflectivity(row, ax, ds):
-    orbit = row['orbit_frame']
     peak_lat = row['peak_lat']
 
     out = _load_window(ds, 'reflectivity_no_attenuation_correction', peak_lat)
@@ -84,7 +83,6 @@ def plot_reflectivity(row, ax, ds):
     return True
 
 def plot_doppler(row, ax, ds):
-    orbit = row['orbit_frame']
     peak_lat = row['peak_lat']
 
     out = _load_window(ds, 'doppler_velocity_best_estimate', peak_lat)
@@ -110,7 +108,6 @@ def plot_doppler(row, ax, ds):
     return True
 
 def plot_doppler_sw(row, ax, ds):
-    orbit = row['orbit_frame']
     peak_lat = row['peak_lat']
 
     #out = _load_window(ds, 'spectrum_width_uncorrected', peak_lat)
@@ -127,7 +124,7 @@ def plot_doppler_sw(row, ax, ds):
     ax.set_xlim(desired_min, desired_max)
 
     info_text = "C-CD Spectrum width [m/s]"
-    ax.text(0.011, 0.97, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+    ax.text(0.011, 0.96, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
             bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
     ax.set_xticks([]); ax.set_yticks([]); ax.set_xlabel(''); ax.set_ylabel('')

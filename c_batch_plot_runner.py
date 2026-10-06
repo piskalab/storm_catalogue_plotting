@@ -17,10 +17,11 @@ from config import JSON_PATH, OUTPUT_DIR
 storm_df = load_filtered_storms(JSON_PATH)
 
 # Optional resume
-RESUME_FROM = '01141A'
+RESUME_FROM = '03459D'
 
 resumed_df = storm_df[
     (storm_df['orbit_frame'] >= RESUME_FROM)
+    #(storm_df['earthcare_id'] >= RESUME_FROM)
 ].reset_index(drop=True)
 
 # Counting thresholds
@@ -39,6 +40,7 @@ else:
 # ----------------------------
 for idx, row in resumed_df.iterrows():
     orbit_frame = row['orbit_frame']
+    #orbit_frame = row['earthcare_id']
     source = row['source']
     print(f"Processing storm {idx + 1}/{len(resumed_df)}: Orbit {orbit_frame}")
 

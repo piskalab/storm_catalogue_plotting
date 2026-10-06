@@ -208,6 +208,7 @@ __marimo__/
 
 # Output directory for generated plots
 output/
+output_*/
 
 # File containing EarthCARE credentials
 credentials.txt

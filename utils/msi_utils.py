@@ -2,7 +2,8 @@ import os
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.cm import ScalarMappable
 import matplotlib.colors as mcolors
 import cartopy.crs as ccrs
 import matplotlib.ticker as mticker
@@ -44,6 +45,25 @@ def apply_jet_colormap(bt_K: np.ndarray, orbit: str) -> np.ndarray:
         rgb[mask_in] = cmap(norm)[:, :3]
     return rgb
 
+def make_bt_mappable(orbit):
+    low, high = _bt_range_for_orbit(orbit)
+
+    cmap = plt.get_cmap("jet_r").copy()
+    cmap.set_under(cmap(0.0))   # temperatures below low
+    cmap.set_over("white")      # temperatures above high
+    cmap.set_bad("white")       # NaN values
+
+    norm = Normalize(
+        vmin=low,
+        vmax=high,
+        clip=False,
+    )
+
+    mappable = ScalarMappable(norm=norm, cmap=cmap)
+    mappable.set_array([])
+
+    return mappable
+
 def apply_grayscale_colormap(data):
     cmap = LinearSegmentedColormap.from_list("custom_gray", [(0.2, 0.2, 0.2), (0.95, 0.95, 0.95)])
     norm = plt.Normalize(vmin=np.nanmin(data), vmax=np.nanmax(data))
@@ -52,6 +72,7 @@ def apply_grayscale_colormap(data):
 
 def plot_msi(row, ax, msi):
     orbit = row['orbit_frame']
+    #orbit = row['earthcare_id']
     peak_lat = row['peak_lat']
     band108 = msi.pixel_values.values[5, :, :]
     band006 = msi.pixel_values.values[0, :, :]
@@ -68,7 +89,20 @@ def plot_msi(row, ax, msi):
     # select rows in ±1.5° around peak
     lat_range_mask = (lat_along >= (peak_lat - 1.5)) & (lat_along <= (peak_lat + 1.5))
     if not np.any(lat_range_mask):
-        print(f"[ERROR] No data in ±1.5° latitude range for orbit {orbit}")
+        # Draw empty box
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor('black')
+            spine.set_linewidth(1)
+
+        info_text = 'MSI [no data available]'
+        ax.text(0.011, 0.96, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        #print(f"[ERROR] No data in ±1.5° latitude range for orbit {orbit}")
         return False
 
     # --- minimal change block: ensure lat is ascending within the window ---
@@ -88,13 +122,19 @@ def plot_msi(row, ax, msi):
         sandwich    = gray_result * rgb_result
         #ax.imshow(rgb_result[:, 12:365].T, aspect='auto', cmap=jet_greys)
         ax.imshow(np.transpose(sandwich[:, 12:365], (1, 0, 2)), aspect='auto', origin=origin)
-        info_text = "MSI enhanced 10.8µm"
-        ax.text(0.011, 0.97, info_text,
+        info_text = "MSI 10.8µm BT [K]"
+        ax.text(0.011, 0.96, info_text,
                 transform=ax.transAxes,
                 verticalalignment='top',
                 horizontalalignment='left',
                 fontsize=8,
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(
+            0.01, 0.81, "nadir",
+            transform=ax.transAxes,
+            va='top', ha='left',
+            fontsize=7,
+        )
 
     elif any(letter in orbit for letter in ['D', 'E', 'F']):
         rgb_result  = apply_jet_colormap(band108_masked[rows_sel, :], orbit)
@@ -102,13 +142,19 @@ def plot_msi(row, ax, msi):
         sandwich    = gray_result * rgb_result
 
         ax.imshow(np.transpose(sandwich[:, 12:365], (1, 0, 2)), aspect='auto', origin=origin)
-        info_text = "MSI enhanced 10.8µm on 0.6µm background"
+        info_text = "MSI 10.8µm BT [K] on 0.6µm background"
         ax.text(0.011, 0.97, info_text,
                 transform=ax.transAxes,
                 verticalalignment='top',
                 horizontalalignment='left',
                 fontsize=8,
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(
+            0.01, 0.81, "nadir",
+            transform=ax.transAxes,
+            va='top', ha='left',
+            fontsize=7,
+        )
 
     ax.axhline(y=278 - 12, color='black', linewidth=0.5, linestyle='--')
     center_col = band108_masked[rows_sel, :].shape[0] // 2
@@ -122,7 +168,9 @@ def plot_msi(row, ax, msi):
         spine.set_edgecolor('black')
         spine.set_linewidth(1)
 
-    return True
+    #return True
+    bt_mappable = make_bt_mappable(orbit)
+    return bt_mappable
 
 
 def _random_cluster_colors(labels, seed):
@@ -193,7 +241,7 @@ def plot_summary(row, ax, msi, li, cpr, time_s=150):
         else:
             li_lat = li["latitude"].values[time_mask]
             li_lon = li["longitude"].values[time_mask]
-        li_cluster = li['subcluster_id'].values[time_mask]
+        li_cluster = li['cluster_id'].values[time_mask]
         
 
         seed = int(hashlib.sha256(str(orbit).encode()).hexdigest(), 16) % (2**32)
@@ -261,6 +309,213 @@ def plot_summary(row, ax, msi, li, cpr, time_s=150):
         gl.xlocator = mticker.MultipleLocator(1)
         gl.ylocator = mticker.MultipleLocator(1)
         ax.tick_params(axis='both', direction='out', length=3, colors='gray', labelsize=7)
+
+        return True
+
+    except Exception as e:
+        print(f"[SUMMARY ERROR] Orbit {orbit}: {e}")
+        return False
+
+
+def plot_summary_horizontal(row, ax, msi, li, time_s=150):
+    """
+    Swath-style summary plot in MSI index space.
+    Geometry matches the MSI panel:
+      x = across-track pixel index
+      y = along-track index (latitude ordered)
+
+    Shows:
+      - MSI grayscale background
+      - CPR track as horizontal line
+      - LI groups projected into MSI pixel space
+    """
+
+    orbit    = row['orbit_frame']
+    #orbit    = row['earthcare_id']
+    peak_lat = float(row['peak_lat'])
+
+    try:
+        # ------------------------------------------------------------------
+        # MSI data
+        # ------------------------------------------------------------------
+        band108 = msi.pixel_values.sel(band="TIR2").values  # 10.8 µm
+        band006 = msi.pixel_values.sel(band="VIS").values  # 0.6  µm
+        lat_msi = msi.latitude.values
+        lon_msi = msi.longitude.values
+
+        b006_max = np.nanmax(band006)
+        band108_masked = np.where(band006 == b006_max, np.nan, band108)
+        band006_masked = np.where(band006 == b006_max, np.nan, band006)
+        lat_masked     = np.where(band006 == b006_max, np.nan, lat_msi)
+        lon_masked     = np.where(band006 == b006_max, np.nan, lon_msi)
+
+        # CPR column index (fixed)
+        cpr_col = 278
+
+        # ------------------------------------------------------------------
+        # Determine MSI window (±1.5° around peak latitude)
+        # ------------------------------------------------------------------
+        lat_along = np.where(band006 == b006_max, np.nan, lat_msi)[:, cpr_col]
+
+        lat_mask = (lat_along >= peak_lat - 1.5) & (lat_along <= peak_lat + 1.5)
+        if not np.any(lat_mask):
+            # Draw empty box
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+            for spine in ax.spines.values():
+                spine.set_edgecolor('black')
+                spine.set_linewidth(1)
+
+            info_text = 'Lightning clusters over MSI 10.8µm [no MSI data available]'
+            ax.text(0.011, 0.97, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+                    bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+            #print(f"[SUMMARY] No MSI data in latitude window for orbit {orbit}")
+            return False
+
+        rows_sel = np.where(lat_mask)[0]
+        lat_sel  = lat_along[rows_sel].astype(float)
+
+        if lat_sel[0] > lat_sel[-1]:
+            rows_sel = rows_sel[::-1]
+            origin = 'lower'
+        else:
+            origin = 'upper'
+
+        # plotting
+        col_min, col_max = 12, 365
+        gray= apply_grayscale_colormap(-band108_masked[rows_sel, :])
+        ax.imshow(np.transpose(gray[:, 12:365], (1, 0, 2)), aspect='auto', origin=origin)
+
+        # ------------------------------------------------------------------
+        # Add lines
+        # ------------------------------------------------------------------
+        ax.axhline(y=278 - 12, color='black', linewidth=0.5, linestyle='--')
+        center_col = band108_masked[rows_sel, :].shape[0] // 2
+        ax.axvline(x=center_col, color='black', linewidth=0.5, linestyle='--')
+
+        # ------------------------------------------------------------------
+        # LI points within ±time_s
+        # ------------------------------------------------------------------
+        time_mask = (
+            np.abs(li['ec_time_diff'].values / np.timedelta64(1, 's')) <= time_s
+        )
+
+        if "parallax_corrected_lat" in li and "parallax_corrected_lon" in li:
+            li_lat = li["parallax_corrected_lat"].values[time_mask]
+            li_lon = li["parallax_corrected_lon"].values[time_mask]
+        else:
+            li_lat = li["latitude"].values[time_mask]
+            li_lon = li["longitude"].values[time_mask]
+
+        li_cluster = li['cluster_id'].values[time_mask]
+        # ------------------------------------------------------------------
+        # Remove unwanted clusters (e.g., -1)
+        # ------------------------------------------------------------------
+        valid_cluster_mask = np.isfinite(li_cluster) & (li_cluster >= 0)
+        li_lat     = li_lat[valid_cluster_mask]
+        li_lon     = li_lon[valid_cluster_mask]
+        li_cluster = li_cluster[valid_cluster_mask].astype(int)
+
+        # cluster colors (reproducible per orbit)
+        seed = int(hashlib.sha256(str(orbit).encode()).hexdigest(), 16) % (2**32)
+        label_to_color = _random_cluster_colors(li_cluster, seed)
+        colors = np.array([
+            label_to_color.get(int(lab), (0.0, 0.0, 0.0))
+            if np.isfinite(lab) else (0.0, 0.0, 0.0)
+            for lab in li_cluster
+        ])
+
+        # ------------------------------------------------------------------
+        # Project LI points into MSI pixel space
+        # ------------------------------------------------------------------
+
+        from scipy.spatial import cKDTree
+
+        # Prepare lat lon
+        lat_masked_sel = lat_masked[rows_sel, 12:365]
+        lon_masked_sel = lon_masked[rows_sel, 12:365]
+
+        # Build KD-tree from *valid* MSI pixels only
+        lat_ref = np.deg2rad(peak_lat)
+        cosref  = np.cos(lat_ref)
+
+        # Flatten masked MSI grids
+        lat_flat = lat_masked_sel.ravel()
+        lon_flat = lon_masked_sel.ravel()
+
+        valid = np.isfinite(lat_flat) & np.isfinite(lon_flat)
+        if not np.any(valid):
+            return True  # nothing to plot
+
+        # Metric-consistent coordinates (degrees)
+        msi_y = lat_flat[valid]
+        msi_x = lon_flat[valid] * cosref
+
+        msi_points = np.column_stack((msi_x, msi_y))
+        tree = cKDTree(msi_points)
+
+        # LI points → same coordinate system
+        li_x = li_lon * cosref
+        li_y = li_lat
+        li_points = np.column_stack((li_x, li_y))
+
+        # Query nearest MSI pixel
+        dist_deg, idx = tree.query(li_points, k=1)
+
+        # Keep only LI within ~1 km (≈0.009°)
+        deg_1km = 1.0 / 111.0
+        keep_dist = dist_deg <= deg_1km
+
+        if np.any(keep_dist):
+            idx = idx[keep_dist]
+            colors = colors[keep_dist]
+
+            flat_indices = np.flatnonzero(valid)[idx]
+            li_rows, li_cols = np.unravel_index(flat_indices, lat_masked_sel.shape)
+
+            # flip y if origin
+            x = li_rows
+            if origin == 'upper':
+                #x = (len(rows_sel)-1) - x
+                ax.set_ylim(col_max - col_min, 0)
+            else:
+                ax.set_ylim(0, col_max - col_min)
+            y = li_cols
+
+            ax.scatter(x, y, s=3, c=colors, zorder=3)
+
+        # ------------------------------------------------------------------
+        # Formatting
+        # ------------------------------------------------------------------
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+        #ax.set_ylim(0, col_max - col_min)
+        ax.set_xlim(0, len(rows_sel)-1)
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor('black')
+            spine.set_linewidth(1)
+
+        info_text = "Lightning clusters over MSI 10.8µm"
+        ax.text(
+            0.01, 0.97, info_text,
+            transform=ax.transAxes,
+            va='top', ha='left',
+            fontsize=8,
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none')
+        )
+        ax.text(
+            0.01, 0.81, "nadir",
+            transform=ax.transAxes,
+            va='top', ha='left',
+            fontsize=7,
+        )
 
         return True
 

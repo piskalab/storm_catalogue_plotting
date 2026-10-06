@@ -24,6 +24,17 @@ def load_filtered_storms(json_path: str) -> pd.DataFrame:
     df["minute_counts"] = df["minute_counts"].apply(
         lambda d: {int(k): v for k, v in d.items()}
     )
+    #df = df[(df['first_lightning_min'] >= -5) & (df['first_lightning_min'] <= 0)]
+    df = df[
+     (df["peak_lon"] >= 9) & (df["peak_lon"] <= 22) &
+     (df["peak_lat"] >= 47) & (df["peak_lat"] <= 52)
+     #(df["peak_lon"] >= -75.4) & (df["peak_lon"] <= -72.4) & # colLMA
+     #(df["peak_lat"] >= 6) & (df["peak_lat"] <= 8) # colLMA
+     #(df["peak_lon"] >= -1) & (df["peak_lon"] <= 4) & # eLMA
+     #(df["peak_lat"] >= 39.5) & (df["peak_lat"] <= 43) # eLMA
+     #(df["peak_lon"] > -77.875) & (df["peak_lon"] < -73.304) & # NALMA
+     #(df["peak_lat"] > 36.294) & (df["peak_lat"] < 39.891) # NALMA
+]
     return df
 
 # ----------------------------
@@ -86,8 +97,8 @@ def fetch_ec_datasets(orbit_frame: str):
         f"(productType = '{PRODUCT_MAP['msi']}'  and (productVersion = 'ba' or productVersion = 'bc')) or "
         #f"(productType = '{PRODUCT_MAP['ctc']}'  and (productVersion = 'ba' or productVersion = 'bc')) or "
         #f"(productType = '{PRODUCT_MAP['aebd']}' and (productVersion = 'ba' or productVersion = 'bc')) or "
-        #f"(productType = '{PRODUCT_MAP['atl']}'  and (productVersion = 'ba' or productVersion = 'bc')) or "
-        f"(productType = '{PRODUCT_MAP['actc']}' and (productVersion = 'ba' or productVersion = 'bc'))"
+        f"(productType = '{PRODUCT_MAP['atl']}'  and (productVersion = 'ba' or productVersion = 'bc'))"
+        #f"(productType = '{PRODUCT_MAP['actc']}' and (productVersion = 'ba' or productVersion = 'bc'))"
         f")"
     )
 

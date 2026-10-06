@@ -113,7 +113,6 @@ def _bounds_for_categories(data: np.ndarray, n_colors: int) -> np.ndarray:
 
 
 def plot_actc(row, ax, ds: xr.Dataset, var_name: str = 'synergetic_target_classification') -> bool:
-    orbit = row['orbit_frame']
     peak_lat = row['peak_lat']
 
     out = _load_window(ds, var_name, peak_lat)
@@ -128,8 +127,8 @@ def plot_actc(row, ax, ds: xr.Dataset, var_name: str = 'synergetic_target_classi
             spine.set_edgecolor('black')
             spine.set_linewidth(1)
 
-        info_text = 'AC-TC Target classification'
-        ax.text(0.011, 0.97, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+        info_text = 'AC-TC Target classification [no data available]'
+        ax.text(0.011, 0.96, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
         return False
 
@@ -144,7 +143,7 @@ def plot_actc(row, ax, ds: xr.Dataset, var_name: str = 'synergetic_target_classi
     ax.set_xlim(desired_min, desired_max)
 
     info_text = 'AC-TC Target classification'
-    ax.text(0.011, 0.97, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+    ax.text(0.011, 0.96, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
             bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
     ax.set_xticks([])

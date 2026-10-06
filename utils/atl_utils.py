@@ -121,6 +121,14 @@ def define_aebd_cmaps():
 aebd_cmap_blue, aebd_cmap_orange = define_aebd_cmaps()
 
 def _load_window(ds, var_name, peak_lat, half_width=1.5):
+    # --- NEW: handle missing dataset ---
+    if ds is None:
+        return None, None, None, None, None
+
+    # --- NEW: handle missing variable or latitude ---
+    if var_name not in ds or 'ellipsoid_latitude' not in ds:
+        return None, None, None, None, None
+    
     lat = ds['ellipsoid_latitude'].astype('float64').values
     #lat = ds['ellipsoid_latitude'].astype('float64').values
     desired_min = peak_lat - half_width
@@ -165,12 +173,24 @@ def _load_window(ds, var_name, peak_lat, half_width=1.5):
     return img, center_lat, extent, desired_min, desired_max
 
 def plot_atlid(row, ax, ds):
-    orbit = row.get('orbit_frame', None)
     peak_lat = row['peak_lat']
 
     # ---- load main data window (same helper as CPR) ----
     out_bs = _load_window(ds, 'mie_attenuated_backscatter', peak_lat)
     if out_bs[0] is None:
+        # Draw empty box
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor('black')
+            spine.set_linewidth(1)
+
+        info_text = 'ATLID Mie attenuated backscatter [no data available]'
+        ax.text(0.011, 0.97, info_text, transform=ax.transAxes, va='top', ha='left', fontsize=8,
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
         return False
 
     data, center_lat, extent, desired_min, desired_max = out_bs
