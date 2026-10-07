@@ -1,15 +1,9 @@
-import os
-import xarray as xr
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.cm import ScalarMappable
-import matplotlib.colors as mcolors
-import cartopy.crs as ccrs
-import matplotlib.ticker as mticker
 import hashlib
-
-from config import LI_PATH
 
 
 def _bt_range_for_orbit(orbit: str):
@@ -71,11 +65,10 @@ def apply_grayscale_colormap(data):
     return rgba[..., :3]
 
 def plot_msi(row, ax, msi):
-    orbit = row['orbit_frame']
-    #orbit = row['earthcare_id']
+    orbit = row['earthcare_id']
     peak_lat = row['peak_lat']
-    band108 = msi.pixel_values.values[5, :, :]
-    band006 = msi.pixel_values.values[0, :, :]
+    band108 = msi.pixel_values.sel(band="TIR2").values  # 10.8 µm
+    band006 = msi.pixel_values.sel(band="VIS").values  # 0.6  µm
     latitude = msi.latitude.values
 
     band108_masked = np.where(band006 == np.max(band006), np.nan, band108)
@@ -189,134 +182,6 @@ def _random_cluster_colors(labels, seed):
     return {lab: tuple(colors[i]) for i, lab in enumerate(uniq)}
 
 
-def plot_summary(row, ax, msi, li, cpr, time_s=150):
-    """
-    Plots a map showing MSI (grayscale), CPR track, and LI groups by cluster.
-    Grayscale rules:
-      - Frames A/B/H: use band108_masked with REVERSED grayscale (cold→bright)
-      - Frames D/E/F: use band006_masked with normal grayscale
-      - vmin/vmax computed from in-window data (robust percentiles)
-    """
-    orbit    = row['orbit_frame']
-    peak_lat = float(row['peak_lat'])
-    peak_lon = float(row['peak_lon'])
-
-    try:
-        # --- MSI data ---
-        band108 = msi.pixel_values.values[5, :, :]  # 10.8 µm
-        band006 = msi.pixel_values.values[0, :, :]  # 0.6  µm
-        lat_msi = msi.latitude.values
-        lon_msi = msi.longitude.values
-
-        b006_max = np.nanmax(band006)
-        band108_masked = np.where(band006 == b006_max, np.nan, band108)
-        band006_masked = np.where(band006 == b006_max, np.nan, band006)
-
-        # --- CPR window (±1.5°) ---
-        cpr_lat = np.asarray(cpr['latitude'].values, dtype=float)
-        cpr_lon = np.asarray(cpr['longitude'].values, dtype=float)
-        desired_min = peak_lat - 1.5
-        desired_max = peak_lat + 1.5
-        cpr_mask = (cpr_lat >= desired_min) & (cpr_lat <= desired_max)
-        cpr_lat_subset = cpr_lat[cpr_mask]
-        cpr_lon_subset = cpr_lon[cpr_mask]
-        if cpr_lat_subset.size == 0:
-            print(f"[SUMMARY] No CPR data in latitude window for orbit {orbit}")
-            return False
-
-        # (kept) pad edges for CPR path continuity
-        pad_left = (cpr_lat_subset[0]  > desired_min)
-        pad_right = (cpr_lat_subset[-1] < desired_max)
-        if pad_left or pad_right:
-            cpr_lat_subset = np.concatenate(([desired_min] if pad_left else [], cpr_lat_subset,
-                                                [desired_max] if pad_right else []))
-            cpr_lon_subset = np.concatenate(([np.nan] if pad_left else [], cpr_lon_subset,
-                                                [np.nan] if pad_right else []))
-
-        # --- LI points within ±time_s seconds ---
-        time_mask = np.abs(li['ec_time_diff'].values / np.timedelta64(1, 's')) <= time_s
-        if "parallax_corrected_lat" in li and "parallax_corrected_lon" in li:
-            li_lat = li["parallax_corrected_lat"].values[time_mask]
-            li_lon = li["parallax_corrected_lon"].values[time_mask]
-        else:
-            li_lat = li["latitude"].values[time_mask]
-            li_lon = li["longitude"].values[time_mask]
-        li_cluster = li['cluster_id'].values[time_mask]
-        
-
-        seed = int(hashlib.sha256(str(orbit).encode()).hexdigest(), 16) % (2**32)
-        label_to_color = _random_cluster_colors(li_cluster, seed)
-        colors = np.array([label_to_color.get(int(lab), (0.0, 0.0, 0.0))
-                            if np.isfinite(lab) else (0.0, 0.0, 0.0)
-                            for lab in li_cluster], dtype=float)
-
-        # --- Map extent ---
-        lat_min = float(np.nanmin(cpr_lat_subset))
-        lat_max = float(np.nanmax(cpr_lat_subset))
-
-        # restrict MSI longitudes to the lat window to determine lon extent
-        lat_window_mask = (lat_msi >= desired_min) & (lat_msi <= desired_max)
-        selected_lon_data = lon_msi[lat_window_mask]
-        if selected_lon_data.size == 0:
-            print(f"[SUMMARY] No MSI data in latitude window for orbit {orbit}")
-            return False
-        lon_min = float(np.nanmin(selected_lon_data))
-        lon_max = float(np.nanmax(selected_lon_data))
-
-        # --- Choose band by frame ---
-        use_band108 = any(letter in orbit for letter in ['A', 'B', 'H'])
-        band_src = band108_masked if use_band108 else band006_masked
-
-        # --- Scale using only in-window data (robust percentiles) ---
-        in_window = ((lat_msi >= desired_min) & (lat_msi <= desired_max) &
-                        (lon_msi >= lon_min)     & (lon_msi <= lon_max))
-        vals = band_src[in_window]
-        vmin, vmax = np.nanmin(band_src), np.nanmax(band_src)
-
-        # Mask out-of-window pixels so they don't render off-extent
-        band_plot = np.where(in_window, band_src, np.nan)
-
-        # --- Grayscale colormap (and reversed for thermal) ---
-        cmap_gray = LinearSegmentedColormap.from_list(
-            "custom_gray", [(0.2, 0.2, 0.2), (0.95, 0.95, 0.95)]
-        )
-        cmap_use = cmap_gray.reversed() if use_band108 else cmap_gray
-
-        # --- Plot ---
-        ax.set_extent([lon_min, lon_max, lat_min, lat_max], crs=ccrs.PlateCarree())
-
-        ax.pcolormesh(
-            lon_msi, lat_msi, band_plot,
-            cmap=cmap_use, vmin=vmin, vmax=vmax,
-            transform=ccrs.PlateCarree(), shading='auto', zorder=1
-        )
-
-        # CPR swath
-        ax.plot(cpr_lon_subset, cpr_lat_subset, color='blue', linewidth=1,
-                transform=ccrs.PlateCarree(), zorder=2)
-
-        # LI clusters
-        ax.scatter(li_lon, li_lat, s=2, c=colors,
-                    transform=ccrs.PlateCarree(), zorder=3)
-
-        # Grid / ticks
-        gl = ax.gridlines(draw_labels=True, linewidth=0.5, color='gray', alpha=0.5)
-        gl.top_labels = False
-        gl.right_labels = False
-        tick_label_style = {'size': 7, 'color': 'gray'}
-        gl.xlabel_style = tick_label_style
-        gl.ylabel_style = tick_label_style
-        gl.xlocator = mticker.MultipleLocator(1)
-        gl.ylocator = mticker.MultipleLocator(1)
-        ax.tick_params(axis='both', direction='out', length=3, colors='gray', labelsize=7)
-
-        return True
-
-    except Exception as e:
-        print(f"[SUMMARY ERROR] Orbit {orbit}: {e}")
-        return False
-
-
 def plot_summary_horizontal(row, ax, msi, li, time_s=150):
     """
     Swath-style summary plot in MSI index space.
@@ -330,8 +195,7 @@ def plot_summary_horizontal(row, ax, msi, li, time_s=150):
       - LI groups projected into MSI pixel space
     """
 
-    orbit    = row['orbit_frame']
-    #orbit    = row['earthcare_id']
+    orbit    = row['earthcare_id']
     peak_lat = float(row['peak_lat'])
 
     try:
@@ -397,26 +261,31 @@ def plot_summary_horizontal(row, ax, msi, li, time_s=150):
         ax.axvline(x=center_col, color='black', linewidth=0.5, linestyle='--')
 
         # ------------------------------------------------------------------
-        # LI points within ±time_s
+        # Lightning points within ±time_s
         # ------------------------------------------------------------------
-        time_mask = (
-            np.abs(li['ec_time_diff'].values / np.timedelta64(1, 's')) <= time_s
-        )
+        time_diff_s = (
+            li["ec_time_diff"] / pd.Timedelta(seconds=1)
+        ).to_numpy()
 
-        if "parallax_corrected_lat" in li and "parallax_corrected_lon" in li:
-            li_lat = li["parallax_corrected_lat"].values[time_mask]
-            li_lon = li["parallax_corrected_lon"].values[time_mask]
+        time_mask = np.abs(time_diff_s) <= time_s
+
+        if (
+            "parallax_corrected_lat" in li.columns
+            and "parallax_corrected_lon" in li.columns
+        ):
+            li_lat = li.loc[time_mask, "parallax_corrected_lat"].to_numpy()
+            li_lon = li.loc[time_mask, "parallax_corrected_lon"].to_numpy()
         else:
-            li_lat = li["latitude"].values[time_mask]
-            li_lon = li["longitude"].values[time_mask]
+            li_lat = li.loc[time_mask, "latitude"].to_numpy()
+            li_lon = li.loc[time_mask, "longitude"].to_numpy()
 
-        li_cluster = li['cluster_id'].values[time_mask]
-        # ------------------------------------------------------------------
-        # Remove unwanted clusters (e.g., -1)
-        # ------------------------------------------------------------------
+        li_cluster = li.loc[time_mask, "cluster_id"].to_numpy()
+
+        # Remove unwanted clusters
         valid_cluster_mask = np.isfinite(li_cluster) & (li_cluster >= 0)
-        li_lat     = li_lat[valid_cluster_mask]
-        li_lon     = li_lon[valid_cluster_mask]
+
+        li_lat = li_lat[valid_cluster_mask]
+        li_lon = li_lon[valid_cluster_mask]
         li_cluster = li_cluster[valid_cluster_mask].astype(int)
 
         # cluster colors (reproducible per orbit)
@@ -429,7 +298,7 @@ def plot_summary_horizontal(row, ax, msi, li, time_s=150):
         ])
 
         # ------------------------------------------------------------------
-        # Project LI points into MSI pixel space
+        # Project lightning points into MSI pixel space
         # ------------------------------------------------------------------
 
         from scipy.spatial import cKDTree

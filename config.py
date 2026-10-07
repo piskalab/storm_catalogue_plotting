@@ -1,50 +1,37 @@
-import os
 from pathlib import Path
-
-# ----------------------------
-# Local directories
-# ----------------------------
-LI_BASE = '/home/bpiskala/Object_Data'
-JSON_PATH  = '/home/bpiskala/AeroStorm/lightning2ec_maap/lightning2earthcare/EarthCARE_lightning_storm_catalogue_FINAL.json'
-#JSON_PATH = '/home/bpiskala/repositories/lightning2earthcare/EarthCARE_lightning_storm_catalogue_20260201.json'
-
-LI_PATH  = os.path.join(LI_BASE, 'lightning_processing/lightning_groups_20240801_20260131')
-#LI_PATH  = os.path.join(LI_BASE, 'lightning_processing/lightning_groups_20260201')
-TRACK_COUNTS_PATH = os.path.join(LI_BASE, 'lightning_processing/track_counts_20240801_20260131')
-#TRACK_COUNTS_PATH = os.path.join(LI_BASE, 'lightning_processing/track_counts_20260201')
 
 # ----------------------------
 # EarthCODE bucket
 # ----------------------------
-# BUCKET = "s3://EarthCODE/"
-# PREFIX = "OSCAssets/storm-data/"
+BUCKET = "s3://EarthCODE/"
+PREFIX = "OSCAssets/storm-data/"
 
-# ENDPOINT_URL = "https://s3.waw4-1.cloudferro.com"
-# REGION_NAME = "eu-west-2"
+ENDPOINT_URL = "https://s3.waw4-1.cloudferro.com"
+REGION_NAME = "eu-west-2"
 
-# S3_STORAGE_OPTIONS = {
-#     "anon": True,
-#     "client_kwargs": {
-#         "endpoint_url": ENDPOINT_URL,
-#         "region_name": REGION_NAME,
-#     },
-# }
+S3_STORAGE_OPTIONS = {
+    "anon": True,
+    "client_kwargs": {
+        "endpoint_url": ENDPOINT_URL,
+        "region_name": REGION_NAME,
+    },
+}
 
 # ----------------------------
 # Storm / lightning parquet files
 # ----------------------------
-# STORM_FILE = "EC_lightning_clusters.parquet"
-# EARTHCARE_ID_MAPPING_FILE = "earthcare_id_mapping.parquet"
+STORM_FILE = "EC_lightning_clusters.parquet"
+EARTHCARE_ID_MAPPING_FILE = "earthcare_id_mapping.parquet"
 
-# TRACK_FILE_MAP = {
-#     "GLM": "EC_track_lightning_GLM.parquet",
-#     "LI": "EC_track_lightning_LI.parquet",
-# }
+TRACK_FILE_MAP = {
+    "GLM": "EC_track_lightning_GLM.parquet",
+    "LI": "EC_track_lightning_LI.parquet",
+}
 
 # ----------------------------
 # Output
 # ----------------------------
-OUTPUT_DIR = './output/'
+OUTPUT_DIR = './output_test/'
 Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 # ----------------------------

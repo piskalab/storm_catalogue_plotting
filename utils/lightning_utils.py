@@ -1,83 +1,59 @@
-import os
-from executing import Source
 import numpy as np
-import pandas as pd
-import xarray as xr
-import json
-from sklearn.metrics.pairwise import haversine_distances
 
 
-def get_lightning_counts(row, file_list_li, track_ds, count_mode: str = "strict"):
-    """
-    Returns:
-      - plot_lats (ascending): CPR latitudes within ±1.5° of peak_lat
-      - plot_counts: overall LI group counts per CPR point (strict/loose)
-      - plot_counts_cluster: per-subcluster LI group counts per CPR point
-      - desired_min, desired_max: numeric bounds for plotting
-    """
-    orbit         = row['orbit_frame']
-    #orbit         = row['earthcare_id']
-    cluster_id = int(row['cluster_id'])
-    peak_lat      = float(row['peak_lat'])
+def get_lightning_counts(row, track_gdf):
+    orbit = row["earthcare_id"]
+    cluster_id = int(row["cluster_id"])
+    peak_lat = float(row["peak_lat"])
+    varname = "lightning_count_2p5"
 
     try:
-        cpr_lat = np.asarray(track_ds['latitude'].values, dtype=float)
-
-        # --- count mode ---
-        if count_mode not in {"strict", "loose"}:
-            print(f"[WARN] Unknown count_mode '{count_mode}', defaulting to 'strict'")
-            count_mode = "strict"
-
-        varname = 'lightning_count_2p5' if count_mode == "strict" else 'lightning_count_5'
-
-        if varname not in track_ds.variables:
-            print(f"[WARN] Requested {count_mode} counts not found in track data for orbit {orbit}")
+        if track_gdf is None or track_gdf.empty:
             return None, None, None, None, None
 
-        # --- per-subcluster counts ---
-        if cluster_id not in track_ds['cluster_id'].values:
-            print(f"[WARN] Cluster {cluster_id} not found in track counts for orbit {orbit}")
+        track_gdf = track_gdf.copy()
+        track_gdf["latitude"] = track_gdf.geometry.y
+        
+        cluster_gdf = track_gdf[track_gdf["cluster_id"] == cluster_id]
+        if cluster_gdf.empty:
             return None, None, None, None, None
 
-        per_cluster_counts = (
-            track_ds[varname]
-            .sel(cluster_id=cluster_id)
-            .values
-            .astype(np.int64)
+        overall = (
+            track_gdf.groupby("latitude", as_index=False)[varname]
+            .sum()
+            .rename(columns={varname: "overall_count"})
         )
 
-        # --- overall counts = sum over subclusters ---
-        overall_counts = (
-            track_ds[varname]
-            .sum(dim="cluster_id")
-            .values
-            .astype(np.int64)
+        cluster = (
+            cluster_gdf.groupby("latitude", as_index=False)[varname]
+            .sum()
+            .rename(columns={varname: "cluster_count"})
         )
 
-        # --- latitude window ---
-        half_width  = 1.5
-        desired_min = peak_lat - half_width
-        desired_max = peak_lat + half_width
+        counts = overall.merge(cluster, on="latitude", how="left")
+        counts["cluster_count"] = counts["cluster_count"].fillna(0)
 
-        mask_lat = (cpr_lat >= desired_min) & (cpr_lat <= desired_max)
-        if not np.any(mask_lat):
-            print(f"[WARN] No CPR data in ±1.5° around peak_lat for orbit {orbit}")
+        desired_min = peak_lat - 1.5
+        desired_max = peak_lat + 1.5
+
+        counts = counts[
+            (counts["latitude"] >= desired_min)
+            & (counts["latitude"] <= desired_max)
+        ].sort_values("latitude")
+
+        if counts.empty:
             return None, None, None, None, None
 
-        plot_lats           = cpr_lat[mask_lat]
-        plot_counts         = overall_counts[mask_lat]
-        plot_counts_cluster = per_cluster_counts[mask_lat]
-
-        # --- ensure ascending latitude ---
-        if plot_lats[0] > plot_lats[-1]:
-            plot_lats           = plot_lats[::-1]
-            plot_counts         = plot_counts[::-1]
-            plot_counts_cluster = plot_counts_cluster[::-1]
-
-        return plot_lats, plot_counts, plot_counts_cluster, desired_min, desired_max
+        return (
+            counts["latitude"].to_numpy(float),
+            counts["overall_count"].to_numpy(np.int64),
+            counts["cluster_count"].to_numpy(np.int64),
+            desired_min,
+            desired_max,
+        )
 
     except Exception as e:
-        print(f"[ERROR] Failed to read precomputed counts for orbit {orbit}: {e}")
+        print(f"[ERROR] Failed to read counts for orbit {orbit}: {e}")
         return None, None, None, None, None
     
 
@@ -91,8 +67,7 @@ def plot_lightning_info(row, ax, plot_lats, plot_counts, plot_counts_cluster,
     if plot_lats is None or len(plot_lats) == 0:
         return False
 
-    orbit        = row['orbit_frame']
-    #orbit        = row['earthcare_id']
+    orbit        = row['earthcare_id']
     surface_type = row['surface_type']
     datetime_str = row['peak_datetime'].strftime('%Y-%m-%d %H:%M')
     peak_lat     = float(row['peak_lat'])
@@ -146,7 +121,8 @@ def plot_lightning_info(row, ax, plot_lats, plot_counts, plot_counts_cluster,
         f"Number of lightning groups around nadir track \n(±{(time_s/60)} min, ±{distance_km:.1f} km)\n\n"
         f"⚡ Storm summary\n"
         f"EarthCARE ID: {orbit}\n"
-        f"Lightning source: {source} / Surface type: {surface_type}\n"
+        f"Lightning source: {source}\n"
+        f"Surface type: {surface_type}\n"
         f"Time: {datetime_str}\n"
         f"Dist. of nadir from storm center: {mean_dist_km:.1f} km\n"
         #f"Storm counts (±{(time_s/60)} min): {cluster_li_c} (all), {close_li_c} (±{distance_km:.1f} km)\n"

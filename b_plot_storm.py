@@ -23,7 +23,7 @@ def _add_inset_colorbar(fig, ax, im, color='black'):
     cbar.outline.set_edgecolor(color)
 
 
-def plot_storm_subplots(row, file_lists, save_dir=None, count_mode='strict', time_threshold=150, distance_threshold=2.5):
+def plot_storm_subplots(row, file_lists, save_dir=None, time_threshold=150, distance_threshold=2.5):
     #fig = plt.figure(figsize=(9, 9), constrained_layout=True)
     #fig = plt.figure(figsize=(6, 10.5), constrained_layout=True)
     fig = plt.figure(figsize=(12, 6), constrained_layout=True)
@@ -52,7 +52,7 @@ def plot_storm_subplots(row, file_lists, save_dir=None, count_mode='strict', tim
     bt_mappable = plot_msi(row, ax_msi, file_lists['msi'])
 
     plot_lats, plot_counts, plot_counts_cluster, desired_min, desired_max = get_lightning_counts(
-        row, file_lists['li'], file_lists['track'], count_mode=count_mode)
+        row, file_lists['track'])
 
     plot2 = plot_lightning_info(row, ax_light, plot_lats, plot_counts, plot_counts_cluster, 
                                    desired_min, desired_max,
@@ -66,7 +66,7 @@ def plot_storm_subplots(row, file_lists, save_dir=None, count_mode='strict', tim
     #plot9 = plot_summary(row, ax_summary, file_lists['msi'], file_lists['li'], file_lists['fmr'], time_s=150)
 
     if not (plot2 and plot3):
-        print(f"Skipping due to missing data for orbit: {row['orbit_frame']}")
+        print(f"Skipping due to missing data for orbit: {row['earthcare_id']}")
         plt.close(fig)
         return
 
